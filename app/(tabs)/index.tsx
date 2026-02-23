@@ -1,31 +1,109 @@
-import { StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable } from "react-native";
+import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { RecordButton } from "@/src/components/RecordButton";
+import { IdeaCard } from "@/src/components/IdeaCard";
+import { EmptyState } from "@/src/components/EmptyState";
+import { useIdeas } from "@/src/hooks/useIdeas";
+import { useRecording } from "@/src/hooks/useRecording";
+import { formatDuration } from "@/src/utils/formatters";
 
-import EditScreenInfo from '@/components/EditScreenInfo';
-import { Text, View } from '@/components/Themed';
+export default function HomeScreen() {
+  const { ideas } = useIdeas();
+  const { isRecording, durationMs, start, stop } = useRecording();
 
-export default function TabOneScreen() {
+  const recentIdeas = ideas.slice(0, 5);
+
+  const handleRecordPress = async () => {
+    if (isRecording) {
+      const id = await stop();
+      if (id) {
+        router.push(`/idea/${id}`);
+      }
+    } else {
+      try {
+        await start();
+      } catch (error) {
+        // Permission denied or other error
+        console.warn("Recording failed:", error);
+      }
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Tab One</Text>
-      <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />
-      <EditScreenInfo path="app/(tabs)/index.tsx" />
+    <View className="flex-1 bg-white dark:bg-gray-900">
+      {/* Hero section */}
+      <View className="items-center px-6 pb-6 pt-8">
+        <Text className="mb-2 text-2xl font-bold text-gray-900 dark:text-white">
+          Capture Your Idea
+        </Text>
+        <Text className="mb-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          Tap to record your thought. We'll turn it into a structured idea.
+        </Text>
+
+        <RecordButton
+          isRecording={isRecording}
+          onPress={handleRecordPress}
+          size="large"
+        />
+
+        {isRecording && (
+          <View className="mt-4 flex-row items-center gap-2">
+            <View className="h-2 w-2 rounded-full bg-red-500" />
+            <Text className="text-base font-medium text-red-500">
+              {formatDuration(durationMs)}
+            </Text>
+          </View>
+        )}
+
+        {!isRecording && (
+          <Pressable
+            onPress={() => router.push("/record")}
+            className="mt-4 flex-row items-center gap-1"
+          >
+            <Ionicons name="expand-outline" size={16} color="#3b82f6" />
+            <Text className="text-sm text-primary-500">
+              Full-screen recording
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Stats bar */}
+      <View className="mx-4 mb-4 flex-row items-center justify-between rounded-xl bg-gray-50 px-4 py-3 dark:bg-gray-800">
+        <View className="flex-row items-center gap-2">
+          <Ionicons name="bulb" size={18} color="#3b82f6" />
+          <Text className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {ideas.length} {ideas.length === 1 ? "idea" : "ideas"} captured
+          </Text>
+        </View>
+        {ideas.length > 0 && (
+          <Pressable onPress={() => router.push("/(tabs)/ideas")}>
+            <Text className="text-sm text-primary-500">View all</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Recent ideas */}
+      {recentIdeas.length > 0 ? (
+        <FlatList
+          data={recentIdeas}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <IdeaCard idea={item} />}
+          ListHeaderComponent={
+            <Text className="mx-4 mb-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+              Recent Ideas
+            </Text>
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      ) : (
+        <EmptyState
+          icon="mic-outline"
+          title="No ideas yet"
+          subtitle="Tap the microphone to record your first idea"
+        />
+      )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  separator: {
-    marginVertical: 30,
-    height: 1,
-    width: '80%',
-  },
-});
