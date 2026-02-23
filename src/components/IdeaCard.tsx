@@ -13,12 +13,7 @@ const statusConfig: Record<
   { icon: keyof typeof Ionicons.glyphMap; color: string; label: string }
 > = {
   recording: { icon: "mic", color: "#ef4444", label: "Recording" },
-  transcribing: {
-    icon: "chatbubble-ellipses",
-    color: "#f59e0b",
-    label: "Transcribing",
-  },
-  summarizing: { icon: "sparkles", color: "#8b5cf6", label: "Summarizing" },
+  transcribed: { icon: "clipboard-outline", color: "#f59e0b", label: "Needs Summary" },
   ready: { icon: "checkmark-circle", color: "#22c55e", label: "Ready" },
   error: { icon: "alert-circle", color: "#ef4444", label: "Error" },
 };

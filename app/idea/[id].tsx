@@ -6,23 +6,74 @@ import {
   Pressable,
   TextInput,
   Alert,
+  ToastAndroid,
+  Platform,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { AudioPlayer } from "@/src/components/AudioPlayer";
 import { ProcessingStatus } from "@/src/components/ProcessingStatus";
 import { useIdeas } from "@/src/hooks/useIdeas";
 import { formatDuration, formatRelativeTime } from "@/src/utils/formatters";
+import { buildClaudePrompt, parseClaudeResponse } from "@/src/utils/prompts";
 import { deleteAudioFile } from "@/src/services/audio";
+import { useIdeasStore } from "@/src/stores/useIdeasStore";
+
+function showToast(message: string) {
+  if (Platform.OS === "android") {
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+  } else {
+    Alert.alert("", message);
+  }
+}
 
 export default function IdeaDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { ideas, removeIdea, updateTitle } = useIdeas();
+  const { updateSummary } = useIdeasStore();
   const idea = ideas.find((i) => i.id === id);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
   const [showTranscript, setShowTranscript] = useState(false);
+  const [showPasteInput, setShowPasteInput] = useState(false);
+  const [pastedText, setPastedText] = useState("");
+
+  // Copy transcript + prompt to clipboard
+  const handleCopyToClaude = useCallback(async () => {
+    if (!idea?.rawTranscript) return;
+    const prompt = buildClaudePrompt(idea.rawTranscript);
+    await Clipboard.setStringAsync(prompt);
+    showToast("Copied! Paste into Claude to get your summary");
+  }, [idea]);
+
+  // Paste Claude's response back
+  const handlePasteFromClipboard = useCallback(async () => {
+    const text = await Clipboard.getStringAsync();
+    if (text) {
+      setPastedText(text);
+    }
+  }, []);
+
+  // Parse and save the pasted summary
+  const handleSaveSummary = useCallback(async () => {
+    if (!idea || !pastedText.trim()) return;
+
+    const parsed = parseClaudeResponse(pastedText);
+    if (!parsed) {
+      Alert.alert(
+        "Couldn't parse response",
+        "Make sure you copied Claude's full JSON response. It should start with { and end with }."
+      );
+      return;
+    }
+
+    await updateSummary(idea.id, parsed);
+    setShowPasteInput(false);
+    setPastedText("");
+    showToast("Summary saved!");
+  }, [idea, pastedText, updateSummary]);
 
   const handleDelete = useCallback(() => {
     Alert.alert("Delete Idea", "This cannot be undone.", [
@@ -114,9 +165,85 @@ export default function IdeaDetailScreen() {
         )}
 
         {/* Audio player */}
-        <View className="mb-6">
-          <AudioPlayer uri={idea.audioUri} duration={idea.duration} />
-        </View>
+        {idea.audioUri ? (
+          <View className="mb-6">
+            <AudioPlayer uri={idea.audioUri} duration={idea.duration} />
+          </View>
+        ) : null}
+
+        {/* Claude integration buttons */}
+        {idea.rawTranscript && idea.status !== "ready" && (
+          <View className="mb-6 gap-3">
+            {/* Copy to Claude */}
+            <Pressable
+              onPress={handleCopyToClaude}
+              className="flex-row items-center justify-center gap-2 rounded-xl bg-primary-500 py-3"
+              style={{ elevation: 2 }}
+            >
+              <Ionicons name="copy-outline" size={20} color="white" />
+              <Text className="text-base font-semibold text-white">
+                Copy to Claude
+              </Text>
+            </Pressable>
+
+            {/* Paste Summary Back */}
+            {!showPasteInput ? (
+              <Pressable
+                onPress={() => setShowPasteInput(true)}
+                className="flex-row items-center justify-center gap-2 rounded-xl border-2 border-primary-500 py-3"
+              >
+                <Ionicons name="clipboard-outline" size={20} color="#3b82f6" />
+                <Text className="text-base font-semibold text-primary-500">
+                  Paste Summary from Claude
+                </Text>
+              </Pressable>
+            ) : (
+              <View className="gap-2 rounded-xl bg-gray-50 p-3 dark:bg-gray-800">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Paste Claude's response:
+                  </Text>
+                  <Pressable onPress={handlePasteFromClipboard}>
+                    <View className="flex-row items-center gap-1 rounded-lg bg-primary-100 px-2 py-1 dark:bg-primary-900">
+                      <Ionicons name="clipboard" size={14} color="#3b82f6" />
+                      <Text className="text-xs font-medium text-primary-600 dark:text-primary-400">
+                        Paste
+                      </Text>
+                    </View>
+                  </Pressable>
+                </View>
+                <TextInput
+                  className="min-h-[120px] rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                  value={pastedText}
+                  onChangeText={setPastedText}
+                  placeholder='Paste the JSON response from Claude here...'
+                  placeholderTextColor="#9ca3af"
+                  multiline
+                  textAlignVertical="top"
+                />
+                <View className="flex-row gap-2">
+                  <Pressable
+                    onPress={() => {
+                      setShowPasteInput(false);
+                      setPastedText("");
+                    }}
+                    className="flex-1 items-center rounded-lg border border-gray-300 py-2 dark:border-gray-600"
+                  >
+                    <Text className="text-sm text-gray-500">Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleSaveSummary}
+                    className="flex-1 items-center rounded-lg bg-green-500 py-2"
+                  >
+                    <Text className="text-sm font-semibold text-white">
+                      Save Summary
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Summary */}
         {idea.summary && (

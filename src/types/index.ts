@@ -1,7 +1,6 @@
 export type IdeaStatus =
   | "recording"
-  | "transcribing"
-  | "summarizing"
+  | "transcribed"
   | "ready"
   | "error";
 
@@ -44,11 +43,4 @@ export interface SummarizationResult {
   summary: string;
   keyPoints: string[];
   tags: string[];
-}
-
-export interface RecordingState {
-  isRecording: boolean;
-  isPaused: boolean;
-  duration: number;
-  metering: number;
 }

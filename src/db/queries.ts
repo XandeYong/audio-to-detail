@@ -71,7 +71,7 @@ export async function updateIdeaTranscript(
 ): Promise<void> {
   const now = new Date().toISOString();
   await db.runAsync(
-    `UPDATE ideas SET raw_transcript = ?, status = 'summarizing', updated_at = ? WHERE id = ?`,
+    `UPDATE ideas SET raw_transcript = ?, status = 'transcribed', updated_at = ? WHERE id = ?`,
     [transcript, now, id]
   );
 }

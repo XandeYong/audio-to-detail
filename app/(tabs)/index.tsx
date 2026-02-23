@@ -10,7 +10,7 @@ import { formatDuration } from "@/src/utils/formatters";
 
 export default function HomeScreen() {
   const { ideas } = useIdeas();
-  const { isRecording, durationMs, start, stop } = useRecording();
+  const { isRecording, transcript, durationMs, start, stop } = useRecording();
 
   const recentIdeas = ideas.slice(0, 5);
 
@@ -24,7 +24,6 @@ export default function HomeScreen() {
       try {
         await start();
       } catch (error) {
-        // Permission denied or other error
         console.warn("Recording failed:", error);
       }
     }
@@ -38,7 +37,7 @@ export default function HomeScreen() {
           Capture Your Idea
         </Text>
         <Text className="mb-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          Tap to record your thought. We'll turn it into a structured idea.
+          Tap to record your thought. We'll transcribe it live.
         </Text>
 
         <RecordButton
@@ -48,11 +47,25 @@ export default function HomeScreen() {
         />
 
         {isRecording && (
-          <View className="mt-4 flex-row items-center gap-2">
-            <View className="h-2 w-2 rounded-full bg-red-500" />
-            <Text className="text-base font-medium text-red-500">
-              {formatDuration(durationMs)}
-            </Text>
+          <View className="mt-4 items-center gap-2">
+            <View className="flex-row items-center gap-2">
+              <View className="h-2 w-2 rounded-full bg-red-500" />
+              <Text className="text-base font-medium text-red-500">
+                {formatDuration(durationMs)}
+              </Text>
+            </View>
+            {transcript ? (
+              <Text
+                className="mt-2 max-w-[280px] text-center text-sm text-gray-600 dark:text-gray-400"
+                numberOfLines={3}
+              >
+                {transcript}
+              </Text>
+            ) : (
+              <Text className="mt-2 text-sm italic text-gray-400">
+                Listening...
+              </Text>
+            )}
           </View>
         )}
 

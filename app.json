@@ -38,9 +38,10 @@
       "expo-router",
       "expo-sqlite",
       [
-        "expo-av",
+        "expo-speech-recognition",
         {
-          "microphonePermission": "Allow Audio to Detail to access your microphone to record voice ideas."
+          "microphonePermission": "Allow Audio to Detail to access your microphone to record voice ideas.",
+          "speechRecognitionPermission": "Allow Audio to Detail to use speech recognition to transcribe your ideas."
         }
       ],
       "expo-secure-store"

@@ -1,117 +1,122 @@
-import { useCallback, useEffect, useRef } from "react";
-import { Audio } from "expo-av";
+import { useCallback, useRef, useState } from "react";
 import * as Crypto from "expo-crypto";
-import { useRecordingStore } from "../stores/useRecordingStore";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+import { Paths } from "expo-file-system";
 import { useIdeasStore } from "../stores/useIdeasStore";
-import * as audioService from "../services/audio";
-import { transcribeAudio } from "../services/transcription";
-import { summarizeTranscript } from "../services/summarization";
 
 export function useRecording() {
-  const store = useRecordingStore();
-  const {
-    addIdea,
-    updateTranscript,
-    updateSummary,
-    updateStatus,
-  } = useIdeasStore();
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [durationMs, setDurationMs] = useState(0);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const { addIdea, updateTranscript, updateStatus } = useIdeasStore();
+
+  const ideaIdRef = useRef<string | null>(null);
+  const audioUriRef = useRef<string | null>(null);
+  const startTimeRef = useRef<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+  // Speech recognition events
+  useSpeechRecognitionEvent("start", () => {
+    setIsRecording(true);
+  });
 
-  const start = useCallback(async () => {
-    const hasPermission = await audioService.requestPermissions();
-    if (!hasPermission) {
-      throw new Error("Microphone permission denied");
-    }
-
-    const recording = await audioService.startRecording();
-    recordingRef.current = recording;
-    store.setRecording(true);
-    store.setPaused(false);
-    store.setDuration(0);
-
-    // Update duration every 100ms
-    intervalRef.current = setInterval(async () => {
-      if (recordingRef.current) {
-        const status = await recordingRef.current.getStatusAsync();
-        if (status.isRecording) {
-          store.setDuration(status.durationMillis ?? 0);
-          store.setMetering(status.metering ?? 0);
-        }
-      }
-    }, 100);
-  }, [store]);
-
-  const stop = useCallback(async () => {
+  useSpeechRecognitionEvent("end", () => {
+    setIsRecording(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+  });
 
-    const result = await audioService.stopRecording();
-    recordingRef.current = null;
-    store.reset();
+  useSpeechRecognitionEvent("result", (event) => {
+    const text = event.results[0]?.transcript ?? "";
+    setTranscript(text);
+  });
 
-    if (!result) return null;
+  useSpeechRecognitionEvent("audioend", (event) => {
+    // Audio file is ready
+    if (event.uri) {
+      audioUriRef.current = event.uri;
+    }
+  });
 
-    // Create idea in DB
-    const id = Crypto.randomUUID();
-    await addIdea({
-      id,
-      audioUri: result.uri,
-      duration: result.duration,
+  useSpeechRecognitionEvent("error", (event) => {
+    console.warn("Speech recognition error:", event.error, event.message);
+    setIsRecording(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  });
+
+  const start = useCallback(async () => {
+    const result =
+      await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) {
+      throw new Error("Microphone/speech recognition permission denied");
+    }
+
+    // Reset state
+    setTranscript("");
+    setDurationMs(0);
+    audioUriRef.current = null;
+    ideaIdRef.current = Crypto.randomUUID();
+    startTimeRef.current = Date.now();
+
+    // Start duration timer
+    intervalRef.current = setInterval(() => {
+      setDurationMs(Date.now() - startTimeRef.current);
+    }, 100);
+
+    // Start speech recognition with audio recording
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      interimResults: true,
+      continuous: true,
+      addsPunctuation: true,
+      recordingOptions: {
+        persist: true,
+        outputDirectory: Paths.document.uri,
+        outputFileName: `idea_${ideaIdRef.current}.wav`,
+      },
     });
+  }, []);
 
-    // Start async processing pipeline
-    processIdea(id, result.uri);
+  const stop = useCallback(async () => {
+    ExpoSpeechRecognitionModule.stop();
+
+    const id = ideaIdRef.current;
+    const finalDuration = Date.now() - startTimeRef.current;
+
+    if (!id) return null;
+
+    // Wait a tick for the audioend event to fire
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const audioUri = audioUriRef.current ?? "";
+
+    // Save idea to DB
+    await addIdea({ id, audioUri, duration: finalDuration });
+
+    // If we got a transcript, save it
+    if (transcript.trim()) {
+      await updateTranscript(id, transcript.trim());
+    } else {
+      await updateStatus(id, "transcribed");
+    }
 
     return id;
-  }, [store, addIdea]);
-
-  const pause = useCallback(async () => {
-    await audioService.pauseRecording();
-    store.setPaused(true);
-  }, [store]);
-
-  const resume = useCallback(async () => {
-    await audioService.resumeRecording();
-    store.setPaused(false);
-  }, [store]);
-
-  // Background processing pipeline
-  const processIdea = async (id: string, audioUri: string) => {
-    try {
-      // Step 1: Transcribe
-      await updateStatus(id, "transcribing");
-      const transcript = await transcribeAudio(audioUri);
-      await updateTranscript(id, transcript);
-
-      // Step 2: Summarize
-      const result = await summarizeTranscript(transcript);
-      await updateSummary(id, result);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Processing failed";
-      await updateStatus(id, "error", message);
-    }
-  };
+  }, [transcript, addIdea, updateTranscript, updateStatus]);
 
   return {
-    isRecording: store.isRecording,
-    isPaused: store.isPaused,
-    durationMs: store.durationMs,
-    metering: store.metering,
+    isRecording,
+    transcript,
+    durationMs,
     start,
     stop,
-    pause,
-    resume,
   };
 }
