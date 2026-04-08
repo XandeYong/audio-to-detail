@@ -42,3 +42,18 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Build artifacts
+*.apk
+*.ipa
+*.aab
+
+# Claude Code
+.claude/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Misc
+bash.exe.stackdump
+temp/
